@@ -135,13 +135,19 @@ metadata.innerHTML = "";
     const sparqlQuery = `
       SELECT ?work ?workLabel ?releaseDate ?image WHERE {
         {
-          ?work wdt:P161 wd:${creatorId}.
-        } UNION {
-          ?work wdt:P57 wd:${creatorId}.
-        } UNION {
-          ?work wdt:P50 wd:${creatorId}.
-        } UNION {
-          ?work wdt:P170 wd:${creatorId}.
+          {
+  ?work wdt:P161 wd:${creatorId}.
+} UNION {
+  ?work wdt:P57 wd:${creatorId}.
+} UNION {
+  ?work wdt:P50 wd:${creatorId}.
+} UNION {
+  ?work wdt:P170 wd:${creatorId}.
+} UNION {
+  ?work wdt:P175 wd:${creatorId}.
+} UNION {
+  ?work wdt:P86 wd:${creatorId}.
+}.
         }
         ?work rdfs:label ?workLabel.
         FILTER(LANG(?workLabel) = "en").
