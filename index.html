@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Creator Age Calculator</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      text-align: center;
+      margin-top: 80px;
+      background-color: #121212;
+      color: #ffffff;
+    }
+
+    input {
+      padding: 10px;
+      margin: 8px;
+      width: 260px;
+      font-size: 16px;
+      background-color: #1e1e1e;
+      color: #ffffff;
+      border: 1px solid #333;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #2d2d2d;
+      color: #ffffff;
+      border: 1px solid #444;
+    }
+
+    button:hover {
+      background-color: #3a3a3a;
+    }
+
+    #imageArea {
+      margin-top: 20px;
+    }
+
+    #imageArea img {
+      width: 180px;
+      margin: 10px;
+      border-radius: 8px;
+    }
+
+    #result {
+      margin-top: 20px;
+      font-size: 18px;
+      font-weight: 500;
+    }
+    #metadata {
+  margin-top: 15px;
+  font-size: 14px;
+  color: #bbbbbb;
+}
+  </style>
+</head>
+<body>
+
+  <h1>Creator Age Calculator</h1>
+
+  <input type="text" id="creatorInput" placeholder="Creator name">
+  <br>
+  <input type="text" id="workInput" placeholder="Work title">
+  <br>
+  <button onclick="calculate()">Calculate</button>
+
+  <div id="imageArea"></div>
+  <p id="result"></p>
+  <div id="metadata"></div>
+
+<script>
+async function calculate() {
+
+  const creatorName = document.getElementById("creatorInput").value.trim();
+  const workName = document.getElementById("workInput").value.trim();
+  const result = document.getElementById("result");
+  const imageArea = document.getElementById("imageArea");
+  const metadata = document.getElementById("metadata");
+metadata.innerHTML = "";
+
+  if (!creatorName || !workName) {
+    result.innerText = "Please enter creator and work.";
+    return;
+  }
+
+  result.innerText = "Searching...";
+  imageArea.innerHTML = "";
+
+  try {
+
+    // Search creator
+    const creatorSearch = await fetch(
+      `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(creatorName)}&language=en&format=json&origin=*`
+    );
+    const creatorData = await creatorSearch.json();
+
+    if (!creatorData.search.length) {
+      result.innerText = "Creator not found.";
+      return;
+    }
+
+    const creatorId = creatorData.search[0].id;
+
+    // Get birth date + image
+    const creatorDetails = await fetch(
+      `https://www.wikidata.org/wiki/Special:EntityData/${creatorId}.json`
+    );
+    const creatorJson = await creatorDetails.json();
+
+    const birth = creatorJson.entities[creatorId]
+      .claims.P569?.[0]?.mainsnak?.datavalue?.value?.time;
+
+    if (!birth) {
+      result.innerText = "Birth date not available.";
+      return;
+    }
+
+    const creatorImage =
+      creatorJson.entities[creatorId].claims.P18?.[0]?.mainsnak?.datavalue?.value;
+
+    // SPARQL: find work linked to creator
+    const sparqlQuery = `
+      SELECT ?work ?workLabel ?releaseDate ?image WHERE {
+        {
+          ?work wdt:P161 wd:${creatorId}.
+        } UNION {
+          ?work wdt:P57 wd:${creatorId}.
+        } UNION {
+          ?work wdt:P50 wd:${creatorId}.
+        } UNION {
+          ?work wdt:P170 wd:${creatorId}.
+        }
+        ?work rdfs:label ?workLabel.
+        FILTER(LANG(?workLabel) = "en").
+        FILTER(CONTAINS(LCASE(?workLabel), "${workName.toLowerCase()}")).
+        OPTIONAL { ?work wdt:P577 ?releaseDate. }
+        OPTIONAL { ?work wdt:P18 ?image. }
+      }
+      LIMIT 5
+    `;
+
+    const sparqlResponse = await fetch(
+      "https://query.wikidata.org/sparql?format=json&query=" +
+      encodeURIComponent(sparqlQuery)
+    );
+
+    const sparqlData = await sparqlResponse.json();
+
+    if (!sparqlData.results.bindings.length) {
+      result.innerText = "No matching work found for this creator.";
+      return;
+    }
+
+    const workData = sparqlData.results.bindings[0];
+
+    if (!workData.releaseDate) {
+      result.innerText = "Creation date not available.";
+      return;
+    }
+
+    function parseTime(t) {
+      const clean = t.replace("+", "").split("T")[0];
+      const parts = clean.split("-");
+      return {
+        year: parseInt(parts[0]),
+        month: parseInt(parts[1]) || 1,
+        day: parseInt(parts[2]) || 1
+      };
+    }
+
+    const birthDate = parseTime(birth);
+    const workDate = parseTime(workData.releaseDate.value);
+
+    let age = workDate.year - birthDate.year;
+
+    if (
+      workDate.month < birthDate.month ||
+      (workDate.month === birthDate.month &&
+       workDate.day < birthDate.day)
+    ) {
+      age--;
+    }
+
+    function buildImageUrl(fileName) {
+      return `https://commons.wikimedia.org/wiki/Special:FilePath/${fileName.replace(/ /g, "_")}`;
+    }
+
+    if (creatorImage) {
+      const img = document.createElement("img");
+      img.src = buildImageUrl(creatorImage);
+      imageArea.appendChild(img);
+    }
+
+    if (workData.image) {
+      const img = document.createElement("img");
+      img.src = workData.image.value;
+      imageArea.appendChild(img);
+    }
+
+    result.innerText =
+      creatorName + " was " + age +
+      " years old when creating \"" +
+      workData.workLabel.value + "\".";
+      function formatDate(parsed) {
+
+const months = [
+  "January", "February", "March", "April",
+  "May", "June", "July", "August",
+  "September", "October", "November", "December"
+];
+
+const monthName = months[parsed.month - 1] || "";
+
+return monthName + " " + parsed.day + ", " + parsed.year;
+}
+
+metadata.innerHTML = `
+  <div>Birth Date: ${formatDate(birthDate)}</div>
+  <div>Creation Date: ${formatDate(workDate)}</div>
+`;
+
+  } catch {
+    result.innerText = "Error fetching data.";
+  }
+}
+</script>
+
+</body>
+</html>
