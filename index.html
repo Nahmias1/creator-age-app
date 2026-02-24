@@ -6,7 +6,7 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       text-align: center;
-      margin-top: 80px;
+      margin-top: 60px;
       background-color: #121212;
       color: #ffffff;
     }
@@ -23,6 +23,7 @@
 
     button {
       padding: 10px 20px;
+      margin: 5px;
       font-size: 16px;
       cursor: pointer;
       background-color: #2d2d2d;
@@ -40,8 +41,47 @@
 
     #imageArea img {
       width: 180px;
-      margin: 10px;
       border-radius: 8px;
+      margin-bottom: 15px;
+    }
+
+    #worksList {
+      margin-top: 30px;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    #worksList h3 {
+      margin-top: 30px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 6px;
+      font-weight: 600;
+    }
+
+    #worksList ul {
+      list-style: none;
+      padding: 0;
+      margin: 10px 0 0 0;
+    }
+
+    #worksList li {
+      padding: 6px 0;
+      border-bottom: 1px solid #1f1f1f;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .year {
+      color: #888;
+      margin-right: 10px;
+    }
+
+    .age {
+      color: #777;
+      margin-left: 10px;
     }
 
     #result {
@@ -50,71 +90,76 @@
       font-weight: 500;
     }
 
-    #instructions {
-  font-size: 14px;
-  color: #aaaaaa;
-  max-width: 500px;
-  margin: 10px auto 20px auto;
-}
-    #metadata {
-  margin-top: 15px;
-  font-size: 14px;
-  color: #bbbbbb;
-}
+    #creatorInfo {
+      color: #bbb;
+      margin-bottom: 20px;
+    }
   </style>
 </head>
 <body>
 
-  <h1>Creator Age Calculator</h1>
-  <p id="instructions">
-    Enter a creator (actor, director, author, artist or musician) and a work title. 
-    Find out how old was the creator when he created that specific work.
-    </p>
+<h1>Creator Age Calculator</h1>
 
-  <input type="text" id="creatorInput" placeholder="Creator name">
-  <br>
-  <input type="text" id="workInput" placeholder="Work title">
-  <br>
-  <button onclick="calculate()">Calculate</button>
+<input type="text" id="creatorInput" placeholder="Creator name"><br>
+<input type="text" id="workInput" placeholder="Work title"><br>
 
-  <div id="imageArea"></div>
-  <p id="result"></p>
-  <div id="metadata"></div>
+<button onclick="calculate()">Calculate Age</button>
+
+<br><br>
+
+<button onclick="loadWorks('ASC')">Filmography ↑</button>
+<button onclick="loadWorks('DESC')">Filmography ↓</button>
+
+<p id="result"></p>
+
+<div id="imageArea"></div>
+<div id="creatorInfo"></div>
+<div id="worksList"></div>
 
 <script>
+
+function formatDate(timeString) {
+  const clean = timeString.replace("+", "").split("T")[0];
+  const parts = clean.split("-");
+  const year = parts[0];
+  const month = parseInt(parts[1]);
+  const day = parseInt(parts[2]);
+
+  const months = [
+    "January","February","March","April",
+    "May","June","July","August",
+    "September","October","November","December"
+  ];
+
+  return months[month - 1] + " " + day + ", " + year;
+}
+
 async function calculate() {
 
   const creatorName = document.getElementById("creatorInput").value.trim();
   const workName = document.getElementById("workInput").value.trim();
   const result = document.getElementById("result");
-  const imageArea = document.getElementById("imageArea");
-  const metadata = document.getElementById("metadata");
-metadata.innerHTML = "";
+
+  result.innerText = "";
 
   if (!creatorName || !workName) {
     result.innerText = "Please enter creator and work.";
     return;
   }
 
-  result.innerText = "Searching...";
-  imageArea.innerHTML = "";
-
   try {
 
-    // Search creator
-    const creatorSearch = await fetch(
+    const searchRes = await fetch(
       `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(creatorName)}&language=en&format=json&origin=*`
     );
-    const creatorData = await creatorSearch.json();
-
-    if (!creatorData.search.length) {
+    const searchData = await searchRes.json();
+    if (!searchData.search.length) {
       result.innerText = "Creator not found.";
       return;
     }
 
-    const creatorId = creatorData.search[0].id;
+    const creatorId = searchData.search[0].id;
 
-    // Get birth date + image
     const creatorDetails = await fetch(
       `https://www.wikidata.org/wiki/Special:EntityData/${creatorId}.json`
     );
@@ -128,120 +173,202 @@ metadata.innerHTML = "";
       return;
     }
 
-    const creatorImage =
-      creatorJson.entities[creatorId].claims.P18?.[0]?.mainsnak?.datavalue?.value;
+    const birthYear = parseInt(birth.substring(1,5));
 
-    // SPARQL: find work linked to creator
     const sparqlQuery = `
-      SELECT ?work ?workLabel ?releaseDate ?image WHERE {
+      SELECT ?work ?workLabel ?releaseDate WHERE {
+
         {
-          {
-  ?work wdt:P161 wd:${creatorId}.
-} UNION {
-  ?work wdt:P57 wd:${creatorId}.
-} UNION {
-  ?work wdt:P50 wd:${creatorId}.
-} UNION {
-  ?work wdt:P170 wd:${creatorId}.
-} UNION {
-  ?work wdt:P175 wd:${creatorId}.
-} UNION {
-  ?work wdt:P86 wd:${creatorId}.
-}.
+          ?work wdt:P161 wd:${creatorId}.
+        } UNION {
+          ?work wdt:P57 wd:${creatorId}.
         }
+
         ?work rdfs:label ?workLabel.
         FILTER(LANG(?workLabel) = "en").
         FILTER(CONTAINS(LCASE(?workLabel), "${workName.toLowerCase()}")).
+
         OPTIONAL { ?work wdt:P577 ?releaseDate. }
-        OPTIONAL { ?work wdt:P18 ?image. }
       }
-      LIMIT 5
+      LIMIT 1
     `;
 
-    const sparqlResponse = await fetch(
+    const response = await fetch(
       "https://query.wikidata.org/sparql?format=json&query=" +
       encodeURIComponent(sparqlQuery)
     );
 
-    const sparqlData = await sparqlResponse.json();
+    const data = await response.json();
 
-    if (!sparqlData.results.bindings.length) {
-      result.innerText = "No matching work found for this creator.";
+    if (!data.results.bindings.length) {
+      result.innerText = "Work not found.";
       return;
     }
 
-    const workData = sparqlData.results.bindings[0];
-
-    if (!workData.releaseDate) {
-      result.innerText = "Creation date not available.";
-      return;
-    }
-
-    function parseTime(t) {
-      const clean = t.replace("+", "").split("T")[0];
-      const parts = clean.split("-");
-      return {
-        year: parseInt(parts[0]),
-        month: parseInt(parts[1]) || 1,
-        day: parseInt(parts[2]) || 1
-      };
-    }
-
-    const birthDate = parseTime(birth);
-    const workDate = parseTime(workData.releaseDate.value);
-
-    let age = workDate.year - birthDate.year;
-
-    if (
-      workDate.month < birthDate.month ||
-      (workDate.month === birthDate.month &&
-       workDate.day < birthDate.day)
-    ) {
-      age--;
-    }
-
-    function buildImageUrl(fileName) {
-      return `https://commons.wikimedia.org/wiki/Special:FilePath/${fileName.replace(/ /g, "_")}`;
-    }
-
-    if (creatorImage) {
-      const img = document.createElement("img");
-      img.src = buildImageUrl(creatorImage);
-      imageArea.appendChild(img);
-    }
-
-    if (workData.image) {
-      const img = document.createElement("img");
-      img.src = workData.image.value;
-      imageArea.appendChild(img);
-    }
+    const releaseYear = parseInt(data.results.bindings[0].releaseDate.value.substring(0,4));
+    const age = releaseYear - birthYear;
 
     result.innerText =
       creatorName + " was " + age +
       " years old when creating \"" +
-      workData.workLabel.value + "\".";
-      function formatDate(parsed) {
-
-const months = [
-  "January", "February", "March", "April",
-  "May", "June", "July", "August",
-  "September", "October", "November", "December"
-];
-
-const monthName = months[parsed.month - 1] || "";
-
-return monthName + " " + parsed.day + ", " + parsed.year;
-}
-
-metadata.innerHTML = `
-  <div>Birth Date: ${formatDate(birthDate)}</div>
-  <div>Creation Date: ${formatDate(workDate)}</div>
-`;
+      data.results.bindings[0].workLabel.value + "\".";
 
   } catch {
-    result.innerText = "Error fetching data.";
+    result.innerText = "Error.";
   }
 }
+
+async function loadWorks(order) {
+
+  const creatorName = document.getElementById("creatorInput").value.trim();
+  const worksDiv = document.getElementById("worksList");
+  const imageArea = document.getElementById("imageArea");
+  const creatorInfo = document.getElementById("creatorInfo");
+
+  worksDiv.innerHTML = "";
+  imageArea.innerHTML = "";
+  creatorInfo.innerHTML = "";
+
+  if (!creatorName) {
+    worksDiv.innerHTML = "Enter a creator first.";
+    return;
+  }
+
+  try {
+
+    const searchRes = await fetch(
+      `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(creatorName)}&language=en&format=json&origin=*`
+    );
+    const searchData = await searchRes.json();
+    if (!searchData.search.length) {
+      worksDiv.innerHTML = "Creator not found.";
+      return;
+    }
+
+    const creatorId = searchData.search[0].id;
+
+    const creatorDetails = await fetch(
+      `https://www.wikidata.org/wiki/Special:EntityData/${creatorId}.json`
+    );
+    const creatorJson = await creatorDetails.json();
+
+    const birth = creatorJson.entities[creatorId]
+      .claims.P569?.[0]?.mainsnak?.datavalue?.value?.time;
+
+    const birthplaceId =
+      creatorJson.entities[creatorId]
+        .claims.P19?.[0]?.mainsnak?.datavalue?.value?.id;
+
+    const creatorImage =
+      creatorJson.entities[creatorId]
+        .claims.P18?.[0]?.mainsnak?.datavalue?.value;
+
+    if (!birth) {
+      worksDiv.innerHTML = "Birth date not available.";
+      return;
+    }
+
+    const birthYear = parseInt(birth.substring(1,5));
+    const formattedBirth = formatDate(birth);
+
+    let birthplaceLabel = "";
+
+    if (birthplaceId) {
+      const placeRes = await fetch(
+        `https://www.wikidata.org/wiki/Special:EntityData/${birthplaceId}.json`
+      );
+      const placeJson = await placeRes.json();
+      birthplaceLabel =
+        placeJson.entities[birthplaceId].labels.en?.value || "";
+    }
+
+    if (creatorImage) {
+      const img = document.createElement("img");
+      img.src = `https://commons.wikimedia.org/wiki/Special:FilePath/${creatorImage.replace(/ /g,"_")}`;
+      imageArea.appendChild(img);
+    }
+
+    creatorInfo.innerHTML = `
+      <div><strong>Born:</strong> ${formattedBirth}</div>
+      <div><strong>Place of Birth:</strong> ${birthplaceLabel}</div>
+    `;
+
+    async function runQuery(property) {
+
+      const query = `
+        SELECT DISTINCT ?work ?workLabel ?releaseDate WHERE {
+
+          ?work wdt:P31/wdt:P279* wd:Q11424.
+          ?work wdt:${property} wd:${creatorId}.
+
+          OPTIONAL { ?work wdt:P577 ?releaseDate. }
+
+          SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+        }
+      `;
+
+      const response = await fetch(
+        "https://query.wikidata.org/sparql?format=json&query=" +
+        encodeURIComponent(query)
+      );
+
+      const data = await response.json();
+
+      const map = new Map();
+
+      data.results.bindings.forEach(item => {
+
+        if (!item.releaseDate) return;
+
+        const id = item.work.value;
+        const title = item.workLabel.value;
+        const year = parseInt(item.releaseDate.value.substring(0,4));
+
+        if (!map.has(id)) {
+          map.set(id, { title, year });
+        }
+      });
+
+      let films = Array.from(map.values());
+
+      films.sort((a,b) => order === "ASC" ? a.year - b.year : b.year - a.year);
+
+      return films;
+    }
+
+    const directedFilms = await runQuery("P57");
+    const actedFilms = await runQuery("P161");
+
+    function buildSection(title, films) {
+      if (!films.length) return "";
+
+      let section = `<h3>${title}</h3><ul>`;
+
+      films.forEach(f => {
+        const age = f.year - birthYear;
+        section += `
+          <li>
+            <span class="year">${f.year}</span>
+            <span>${f.title}</span>
+            <span class="age">(${age})</span>
+          </li>
+        `;
+      });
+
+      section += "</ul>";
+      return section;
+    }
+
+    worksDiv.innerHTML =
+      buildSection("Directed", directedFilms) +
+      buildSection("Acted", actedFilms);
+
+  } catch (error) {
+    worksDiv.innerHTML = "Error loading filmography.";
+    console.error(error);
+  }
+}
+
 </script>
 
 </body>
